@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>THE SUMMIT</title>
+
+  <style>
+    :root {
+      --bg:#071028;
+      --panel:#0b1a2b;
+      --accent:#22c55e;
+      --danger:#ef4444;
+      --muted:#9fb0c8;
+      --card-bg:#0e1d33;
+    }
+    body{
+      margin:0;
+      background:var(--bg);
+      font-family:"Inter",Arial,sans-serif;
+      color:white;
+      display:flex;
+      justify-content:center;
+      padding:20px;
+    }
+    .wrap{display:flex;gap:20px;max-width:1200px;width:100%;}
+    .card{
+      background:var(--card-bg);
+      border-radius:12px;
+      padding:16px;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    }
+    canvas{
+      border-radius:12px;
+      background:black;
+      display:block;
+    }
+    .canvas-controls{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+    .sidebar{width:280px;}
+    h3,h4{margin-top:0;color:var(--accent);}
+    button{
+      padding:8px 12px;
+      border:none;
+      background:#1a2c45;
+      color:white;
+      border-radius:6px;
+      cursor:pointer;
+    }
+    button:hover{opacity:.8;}
+    .primary{background:var(--accent);color:#000;}
+    .stat{margin-bottom:8px;}
+    .bar{width:100%;height:8px;background:#123;border-radius:4px;margin-top:4px;}
+    .bar i{display:block;height:100%;background:var(--accent);border-radius:4px;}
+    .hint{margin-bottom:4px;font-weight:bold;color:var(--accent);}
+#overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.55);
+  backdrop-filter:blur(3px);
+  display:none;
+  z-index:100;
+}
+    .modal{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:var(--panel);
+  padding:20px;
+  width:420px;
+  border-radius:12px;
+  display:none;
+  box-shadow:0 4px 20px rgba(0,0,0,0.4);
+  z-index:101; /* 🔑 INI PENTING */
+}
+    .choices{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+    .choice{padding:10px;background:#112433;border-radius:6px;cursor:pointer;}
+    .choice:hover{background:#163045;}
+    .topbar{display:flex;justify-content:space-between;align-items:center;}
+
+    #gameOverModal{
+  display:none;
+  text-align:center;
+}
+  </style>
+</head>
+<body>
+  <button id="btnSound">Sound: ON</button>
+
+  <div class="modal" id="gameOverModal">
+  <h3>Game Over</h3>
+  <p>Skor kamu: <strong id="finalScore">0</strong></p>
+  <button id="btnResetGame" class="primary">Reset Game</button>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <canvas id="gameCanvas" width="640" height="720"></canvas>
+
+    <div class="canvas-controls">
+      <div id="statusText">Tekan Space/W untuk lompat (double jump aktif!). S = turun cepat.</div>
+      <div style="display:flex; gap:8px;">
+        <button id="btnPause">Pause (P)</button>
+        <button id="btnRestart" class="primary">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="card sidebar">
+    <h3>Info Game</h3>
+    <div class="stat">Score: <strong id="score">0</strong></div>
+
+    <div class="stat">Energy: <strong id="energyVal">50</strong>/100
+      <div class="bar"><i id="energyBar" style="width:50%"></i></div>
+    </div>
+
+    <div class="stat">Best: <strong id="best">0</strong></div>
+    <div class="stat">Quiz cooldown: <span id="quizCD">20</span>s</div>
+
+    <div style="margin-top:12px">
+      <div class="hint">Mechanics:</div>
+      <ul style="color:var(--muted)">
+        <li>Jump biasa = 5 energi</li>
+        <li>Double jump = 10 energi</li>
+        <li>Double jump hanya sekali di udara</li>
+        <li>Quiz benar = +30 energi</li>
+      </ul>
+    </div>
+
+    <button id="btnQuiz">Open Quiz (Q)</button>
+    <button id="btnSave">Save Best</button>
+    <button id="btnLoad">Load Best</button>
+  </aside>
+</div>
+
+<div id="overlay"></div>
+
+<div class="modal" id="quizModal">
+  <div class="topbar">
+    <div>
+      <h4 id="quizQ">Pertanyaan</h4>
+      <div>Time left: <span id="qt">10</span>s</div>
+    </div>
+    <div>Kalo benar: +30 energi</div>
+  </div>
+  <div class="choices" id="choices"></div>
+  <div style="text-align:right;margin-top:10px;">
+    <button id="closeQuiz">Close</button>
+  </div>
+</div>
+
+<div id="startScreen" style="
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.85);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:200;
+">
+  <div style="text-align:center">
+    <h1 style="color:#22c55e;margin-bottom:20px;">THE SUMMIT</h1>
+    <button id="btnPlay" class="primary" style="font-size:20px;padding:14px 28px;">
+      ▶ PLAY
+    </button>
+  </div>
+</div>
+
+
+
+<audio id="bgm" loop>
+  <source src="backsound.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+const btnSound = document.getElementById("btnSound");
+let soundOn = true;
+
+btnSound.onclick = ()=>{
+  soundOn = !soundOn;
+  bgm.muted = !soundOn;
+  btnSound.textContent = soundOn ? "Sound: ON" : "Sound: OFF";
+};
+
+/* AUDIO */
+const bgm = document.getElementById("bgm");
+bgm.volume = 0.5;
+let bgmStarted = false;
+
+/* CANVAS & STATE */
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+let player, platforms, scrollY;
+let gravity = 0.8;
+let keys = {};
+let score = 0, best = 0;
+let energy = 50;
+let gameStarted = false;
+
+
+const JUMP_COST = 5;
+const DOUBLE_JUMP_COST = 10;
+
+let paused = false;
+let gameOverFlag = false;
+
+/* UI */
+const scoreEl = document.getElementById("score");
+const energyEl = document.getElementById("energyVal");
+const energyBar = document.getElementById("energyBar");
+const bestEl = document.getElementById("best");
+const quizCDEl = document.getElementById("quizCD");
+const overlay = document.getElementById("overlay");
+const quizModal = document.getElementById("quizModal");
+const quizQ = document.getElementById("quizQ");
+const choicesDiv = document.getElementById("choices");
+const qt = document.getElementById("qt");
+const gameOverModal = document.getElementById("gameOverModal");
+const finalScoreEl = document.getElementById("finalScore");
+const btnResetGame = document.getElementById("btnResetGame");
+
+btnResetGame.onclick = () => {
+  overlay.style.display = "none";
+  gameOverModal.style.display = "none";
+
+  gameStarted = false;
+  startScreen.style.display = "flex";
+
+  bgm.pause();
+  bgm.currentTime = 0;
+
+  init();
+};
+
+const startScreen = document.getElementById("startScreen");
+const btnPlay = document.getElementById("btnPlay");
+
+btnPlay.onclick = () => {
+  gameStarted = true;
+  startScreen.style.display = "none";
+
+  startBGM(); // mulai musik
+};
+
+/* QUIZ */
+let quizCooldown=0;
+let autoQuizTimer=0;
+const QUIZ_INTERVAL = 20;
+
+const QUESTIONS=[
+  {q:"Ibukota Indonesia?",choices:["Jakarta","Bandung","Medan","Surabaya"],a:0},
+  {q:"2+2*3=?",choices:["12","8","10","6"],a:3},
+  {q:"Campuran merah+biru?",choices:["Hijau","Ungu","Oranye","Coklat"],a:1}
+];
+
+function startBGM(){
+  if(!bgmStarted){
+    bgm.play().catch(()=>{});
+    bgmStarted = true;
+  }
+}
+
+function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+
+function init(){
+  player = {
+   x: W/2,
+  y: H-80,
+  w: 48,
+  h: 40,
+  vx: 0,
+  vy: 0,
+  onGround: false,
+  canDouble: true
+  };
+
+  platforms=[];
+  scrollY=0;
+
+  platforms.push({x:W/2-80,y:H-40,w:160,h:14});
+
+  let py = H-120;
+  while(py > -3000){
+    const w = rand(60,160);
+    const x = rand(20, W-w-20);
+    platforms.push({x,y:py,w,h:14});
+    py -= rand(60,110);
+  }
+
+  score = 0;
+  energy = 50;
+
+  best = parseInt(localStorage.getItem("dl_best")) || 0;
+  updateUI();
+
+  paused=false;
+  gameOverFlag=false;
+  autoQuizTimer=0;
+}
+init();
+
+/* UI UPDATE */
+function updateUI(){
+  scoreEl.textContent = Math.floor(score);
+  energyEl.textContent = Math.floor(energy);
+  energyBar.style.width = energy + "%";
+  bestEl.textContent = best;
+  quizCDEl.textContent = Math.round(quizCooldown);
+}
+
+/* INPUT */
+
+window.addEventListener("keydown",(e)=>{
+  startBGM(); //mulai backsound
+  keys[e.key.toLowerCase()] = true;
+
+  if(e.key===" " || e.key.toLowerCase()==="w"){
+    e.preventDefault();
+    tryJump();
+  }
+  if(e.key.toLowerCase()==="p") togglePause();
+  if(e.key.toLowerCase()==="q") openQuiz();
+});
+
+window.addEventListener("keyup",(e)=>{
+  keys[e.key.toLowerCase()] = false;
+});
+
+btnResetGame.onclick = () => {
+  overlay.style.display = "none";
+  gameOverModal.style.display = "none";
+
+  bgm.currentTime = 0;
+  bgm.play().catch(()=>{});
+
+  init();
+};
+
+/* JUMP SYSTEM (DOUBLE JUMP INCLUDED) */
+function tryJump(){
+  if(paused || gameOverFlag) return;
+
+  /* --- NORMAL JUMP --- */
+  if(player.onGround && energy >= JUMP_COST){
+    player.vy = -13;
+    player.onGround = false;
+    player.canDouble = true;
+    energy -= JUMP_COST;
+    updateUI();
+    return;
+  }
+
+  /* --- DOUBLE JUMP --- */
+  if(!player.onGround && player.canDouble && energy >= DOUBLE_JUMP_COST){
+    player.vy = -13;
+    player.canDouble = false;
+    energy -= DOUBLE_JUMP_COST;
+    updateUI();
+    return;
+  }
+}
+
+/* PHYSICS */
+function physics(delta){
+  let move=0;
+  if(keys["arrowleft"]||keys["a"]) move=-1;
+  if(keys["arrowright"]||keys["d"]) move=1;
+
+  player.vx = move * 4.2;
+  player.x += player.vx;
+
+  player.vy += gravity;
+
+  if((keys["s"]||keys["arrowdown"]) && !player.onGround) player.vy += gravity*0.8;
+  player.y += player.vy;
+
+  player.onGround=false;
+
+  /* PLATFORM COLLISION + RESET DOUBLE JUMP */
+  for(let p of platforms){
+    const py = p.y + scrollY;
+
+    if(player.vy>=0 && player.x+player.w>p.x && player.x<p.x+p.w){
+      if(player.y+player.h >= py && player.y+player.h <= py + player.vy + 14){
+        player.y = py - player.h;
+        player.vy = 0;
+        player.onGround = true;
+        player.canDouble = true;        // RESET DOUBLE JUMP HERE ✔
+      }
+    }
+  }
+
+  if(player.x < -player.w) player.x = W;
+  if(player.x > W) player.x = -player.w;
+
+  const trigger = H*0.35;
+  if(player.y < trigger){
+    const dy = trigger - player.y;
+    player.y = trigger;
+    for(let p of platforms) p.y += dy;
+    score += dy;
+  }
+
+  for(let i=platforms.length-1;i>=0;i--){
+    if(platforms[i].y > H+200){
+      platforms.splice(i,1);
+      const highest = Math.min(...platforms.map(p=>p.y));
+      const w = rand(60,160);
+      const x = rand(20, W-w-20);
+      const y = highest - rand(60,110);
+      platforms.push({x,y,w,h:14});
+    }
+  }
+
+  if(player.y > H+50) gameOver();
+
+  energy = Math.max(0, Math.min(100, energy));
+  updateUI();
+}
+
+/* DRAW */
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(bgImg,0,scrollY * 0.2,W,H);
+
+  for(let p of platforms){
+    ctx.fillStyle="#184b42";
+    roundRect(ctx,p.x,p.y+scrollY,p.w,p.h,6,true);
+  }
+
+  // posisi player
+const px = player.x;
+const py = player.y;
+
+/// DRAW PLAYER IMAGE
+if (playerImg.complete) {
+  ctx.save();
+  ctx.translate(px + player.w / 2, py);
+  ctx.scale(player.vx < 0 ? -1 : 1, 1);
+
+  ctx.shadowColor = "rgba(255,255,255,0.6)";
+  ctx.shadowBlur = 10;
+
+  ctx.drawImage(
+    playerImg,
+    -player.w / 2,
+    0,
+    player.w,
+    player.h
+  );
+
+  ctx.restore();
+} else {
+  // fallback kalau gambar belum load
+  ctx.fillStyle = "#38bdf8";
+  roundRect(ctx, px, py, player.w, player.h, 8, true);
+}
+}
+
+function roundRect(ctx,x,y,w,h,r,f){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if(f) ctx.fill();
+}
+
+/* QUIZ */
+function isQuizOpen(){ return quizModal.style.display==="block"; }
+
+function openQuiz(){
+  if(isQuizOpen() || gameOverFlag) return;
+
+  paused=true;
+  overlay.style.display="block";
+  quizModal.style.display="block";
+
+  const q = QUESTIONS[rand(0,QUESTIONS.length-1)];
+  currentQuestion=q;
+  quizQ.textContent=q.q;
+
+  choicesDiv.innerHTML="";
+  q.choices.forEach((c,i)=>{
+    const b=document.createElement("div");
+    b.className="choice";
+    b.textContent=c;
+    b.onclick=()=>selectAnswer(i);
+    choicesDiv.appendChild(b);
+  });
+
+  startQuizTimer(10);
+}
+
+function closeQuiz(){
+  overlay.style.display="none";
+  quizModal.style.display="none";
+  stopQuizTimer();
+  bgm.play().catch(()=>{});
+  paused=false;
+}
+
+let currentQuestion=null;
+
+function selectAnswer(i){
+  stopQuizTimer();
+  if(i===currentQuestion.a){
+    energy=Math.min(100, energy+30);
+    alert("Benar! +30 Energi");
+  } else {
+    alert("Salah!");
+  }
+  updateUI();
+  closeQuiz();
+}
+
+/* QUIZ TIMER */
+let quizTimerInterval=null;
+
+function startQuizTimer(t){
+  quizTimeLeft=t;
+  qt.textContent=t;
+
+  quizTimerInterval=setInterval(()=>{
+    quizTimeLeft--;
+    qt.textContent=quizTimeLeft;
+    if(quizTimeLeft<=0){
+      stopQuizTimer();
+      closeQuiz();
+    }
+  },1000);
+}
+function stopQuizTimer(){
+  clearInterval(quizTimerInterval);
+  quizTimerInterval=null;
+}
+
+/* GAME OVER */
+function gameOver(){
+  gameOverFlag = true;
+  paused = true;
+
+  bgm.pause(); 
+
+  if(score > best){
+    best = Math.floor(score);
+    localStorage.setItem("dl_best", best);
+  }
+
+  finalScoreEl.textContent = Math.floor(score);
+
+  overlay.style.display = "block";
+  gameOverModal.style.display = "block";
+
+  updateUI();
+}
+
+
+
+/* SAVE LOAD */
+document.getElementById("btnSave").onclick = ()=>{ localStorage.setItem("dl_best",best);alert("Saved"); };
+document.getElementById("btnLoad").onclick = ()=>{ best=parseInt(localStorage.getItem("dl_best"))||0;updateUI();alert("Loaded"); };
+document.getElementById("btnQuiz").onclick = ()=> openQuiz();
+document.getElementById("closeQuiz").onclick = ()=> closeQuiz();
+document.getElementById("btnPause").onclick = ()=> togglePause();
+document.getElementById("btnRestart").onclick = ()=>{
+  overlay.style.display = "none";
+  gameOverModal.style.display = "none";
+  init();
+};
+
+function togglePause(){
+  paused = !paused;
+  document.getElementById("btnPause").textContent =
+    paused ? "Resume (P)" : "Pause (P)";
+
+  if(paused) bgm.pause();
+  else bgm.play().catch(()=>{});
+}
+
+/* BACKGROUND IMAGE */
+const bgImg = new Image();
+bgImg.src = "background.png"; // pastikan nama file benar
+
+/* PLAYER IMAGE */
+const playerImg = new Image();
+playerImg.src = "rimuru.png"; // pastikan nama file sama
+
+
+/* GAME LOOP */
+let lastTime=0;
+
+function loop(ts){
+  if(!gameStarted){
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  if(lastTime===0) lastTime=ts;
+  const delta=(ts-lastTime)/16.666;
+  lastTime=ts;
+
+  if(!paused && !gameOverFlag && !isQuizOpen()) physics(delta);
+  draw();
+
+  if(!paused && !gameOverFlag && !isQuizOpen()){
+    autoQuizTimer += delta/60;
+    if(autoQuizTimer>=QUIZ_INTERVAL){
+      autoQuizTimer=0;
+      openQuiz();
+      bgm.pause();
+    }
+    quizCooldown=Math.max(0,QUIZ_INTERVAL-autoQuizTimer);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+
+</script>
+
+</body>
+</html>
